@@ -1,26 +1,81 @@
 @import "tailwindcss";
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
+/* ───────── Theme tokens (light) ───────── */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+      color-scheme: dark;
+    --bg: #0a1428;
+    --surface: #10203d;
+    --ink: #eaf2ff;
+    --muted: #a9b8d3;
+    --teal: #2cc3d4;
+    --gold: #f7b731;
+    --line: #1f3358;
+    --btn: #2cc3d4;
+    --btn-ink: #0a1428;
+    --btn-txt:#0d2a5c;
+
+  box-sizing: border-box;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
+
+/* ───────── Dark: chosen manually with the toggle ───────── */
+:root[data-theme="light"] {
+    color-scheme: light;
+  --bg: #ffffff;
+  --surface: #f2f8fa;
+  --ink: #0d2a5c;
+  --muted: #4a5b78;
+  --teal: #0a9fb0;
+  --gold: #f7b731;
+  --line: #d6e6ec;
+  --btn: #08808f;
+  --btn-ink: #ffffff;
+}
+
+/* ───────── Expose the tokens as Tailwind utilities ─────────
+   bg-bg, bg-surface, text-ink, text-muted, text-teal,
+   bg-gold, border-line, bg-btn, text-btn-ink ... */
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-teal: var(--teal);
+  --color-gold: var(--gold);
+  --color-line: var(--line);
+  --color-btn: var(--btn);
+  --color-btn-ink: var(--btn-ink);
+
+  --font-sans: var(--font-cairo), Tahoma, "Segoe UI", sans-serif;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+/* ───────── Base ───────── */
+@layer base {
+  html {
+    scroll-behavior: smooth;
+    scroll-padding-top: calc(env(safe-area-inset-top, 0px) + 90px);
   }
-}
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-size: 17px;
+    line-height: 1.9;
+  }
+
+  @media (max-width: 760px) {
+    html {
+      scroll-padding-top: calc(env(safe-area-inset-top, 0px) + 120px);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+  }
 }
