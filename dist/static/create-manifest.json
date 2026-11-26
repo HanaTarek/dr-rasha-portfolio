@@ -1,5 +1,5 @@
 {
-  "createdAt": "2026-11-24T02:20:36.258Z",
+  "createdAt": "2026-11-26T22:15:14.506Z",
   "studioVersion": "6.24.0",
   "version": 3,
   "workspaces": [
@@ -15,7 +15,7 @@
       },
       "name": "default",
       "projectId": "uc6805ie",
-      "schema": "616ca810.create-schema.json",
+      "schema": "9f8fbcb6.create-schema.json",
       "title": "موقع أ.د. رشا محمد أشرف",
       "tools": "6cdec05c.create-tools.json"
     }
