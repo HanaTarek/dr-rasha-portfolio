@@ -30,8 +30,13 @@ const nextConfig: NextConfig = {
     ];
     return [
       { source: "/pdfjs/:path*", headers: immutable },
-      // Sanity file URLs are content-hashed, so they never change
-      { source: "/pdf/:path*", headers: immutable },
+      // Range (206) responses must not be cached at the edge: the cache key ignores
+      // the Range header and would replay one slice for every range request.
+      // Sanity's own CDN still caches the file, so this stays fast.
+      {
+        source: "/pdf/:path*",
+        headers: [{ key: "Cache-Control", value: "no-store" }],
+      },
     ];
   },
 };
