@@ -5,11 +5,15 @@ import { useEffect, useRef, useState } from "react";
 /*
  * Progressive PDF viewer.
  *
- *  - pdf.js loads the file by URL and fetches only the byte ranges the visible pages need
- *    (needs `Accept-Ranges` on the response: serve the file same-origin, see lib/pdf.ts).
+ *  - pdf.js loads the file through OUR OWN range loader (PDFDataRangeTransport): only the
+ *    byte ranges the visible pages need are fetched, each with its own cache key
+ *    (?rng=begin-end) and verified against the response's Content-Range header.
+ *    This protects against CDNs/proxies that cache one 206 response and replay it
+ *    for every other range (which makes pdf.js fail with "Invalid PDF structure").
  *  - One placeholder per page is created right away (no layout shift); each page is drawn
  *    as soon as its bytes arrive, one at a time, only when it is near the viewport.
  *  - Pages far from the viewport are released again, so memory stays flat on big PDFs.
+ *  - If range loading is impossible, the file is downloaded normally as a last resort.
  *
  * pdf.js 3.11.174 (UMD), self-hosted in public/pdfjs/3.11.174/ :
  *   pdf.min.js + pdf.worker.min.js  (copy them from node_modules/pdfjs-dist/build/)
@@ -26,14 +30,26 @@ type PdfPage = {
 };
 type PdfDoc = { numPages: number; getPage(n: number): Promise<PdfPage> };
 type LoadingTask = { promise: Promise<PdfDoc>; destroy(): Promise<void> };
+type RangeTransport = {
+  requestDataRange: (begin: number, end: number) => void;
+  onDataRange(begin: number, chunk: Uint8Array): void;
+};
 type PdfJsLib = {
   GlobalWorkerOptions: { workerSrc: string };
   PDFWorker: new (o?: { name?: string }) => unknown;
+  PDFDataRangeTransport: new (
+    length: number,
+    initialData: Uint8Array | null,
+  ) => RangeTransport;
   getDocument(src: {
-    url: string;
+    url?: string;
+    range?: RangeTransport;
+    length?: number;
+    initialData?: Uint8Array;
     worker?: unknown;
     disableAutoFetch?: boolean;
     disableStream?: boolean;
+    disableRange?: boolean;
     isEvalSupported?: boolean;
     rangeChunkSize?: number;
   }): LoadingTask;
@@ -45,6 +61,7 @@ declare global {
 }
 
 const BASE = "/pdfjs/3.11.174/";
+const CHUNK = 262144;
 
 type Runtime = { lib: PdfJsLib; worker: unknown };
 let runtimePromise: Promise<Runtime> | null = null;
@@ -77,6 +94,94 @@ function loadPdfJs(): Promise<Runtime> {
       });
   }
   return runtimePromise;
+}
+
+/* ---------- range loading (cache-safe) ---------- */
+
+class RangeProblem extends Error {}
+
+const withParam = (url: string, key: string, value: string) =>
+  `${url}${url.includes("?") ? "&" : "?"}${key}=${value}`;
+
+/**
+ * Fetches bytes [begin, end] (inclusive). Every range has its own URL, so a cache that
+ * ignores the Range header still stores them separately. The reply is verified: its
+ * Content-Range must start at `begin`, otherwise the request is retried with a new key.
+ */
+async function fetchRange(
+  url: string,
+  begin: number,
+  end: number,
+  signal: AbortSignal,
+): Promise<{ data: Uint8Array; total: number }> {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const key =
+      attempt === 0
+        ? `${begin}-${end}`
+        : `${begin}-${end}-${attempt}-${Date.now()}`;
+    const res = await fetch(withParam(url, "rng", key), {
+      headers: { Range: `bytes=${begin}-${end}` },
+      signal,
+    });
+
+    if (res.status === 404 || res.status === 403) {
+      void res.body?.cancel();
+      throw Object.assign(new Error(`HTTP ${res.status}`), {
+        status: res.status,
+      });
+    }
+
+    const m = /^bytes (\d+)-(\d+)\/(\d+|\*)$/.exec(
+      res.headers.get("content-range") ?? "",
+    );
+    if (res.status === 206 && m && Number(m[1]) === begin) {
+      const data = new Uint8Array(await res.arrayBuffer());
+      if (data.length === Number(m[2]) - begin + 1) {
+        return { data, total: m[3] === "*" ? 0 : Number(m[3]) };
+      }
+    } else {
+      void res.body?.cancel(); // wrong slice or a full 200: don't download it
+    }
+  }
+  throw new RangeProblem(`bad range response for bytes ${begin}-${end}`);
+}
+
+async function openRanged(
+  rt: Runtime,
+  url: string,
+  signal: AbortSignal,
+  isCancelled: () => boolean,
+  onTask: (t: LoadingTask) => void,
+): Promise<PdfDoc> {
+  const first = await fetchRange(url, 0, CHUNK - 1, signal);
+  if (!first.total) throw new RangeProblem("unknown file size");
+  const total = first.total;
+
+  const transport = new rt.lib.PDFDataRangeTransport(total, first.data);
+  transport.requestDataRange = (begin: number, end: number) => {
+    // pdf.js passes an exclusive end
+    const last = Math.min(end, total) - 1;
+    fetchRange(url, begin, last, signal)
+      .then(({ data }) => {
+        if (!isCancelled()) transport.onDataRange(begin, data);
+      })
+      .catch((e) => {
+        if (!signal.aborted) console.error("range request failed:", e);
+      });
+  };
+
+  const task = rt.lib.getDocument({
+    range: transport,
+    length: total,
+    initialData: first.data,
+    worker: rt.worker,
+    disableStream: true,
+    disableAutoFetch: true, // never download the rest of the file in the background
+    isEvalSupported: false,
+    rangeChunkSize: CHUNK,
+  });
+  onTask(task);
+  return task.promise;
 }
 
 type ErrorKind = "lib" | "notfound" | "forbidden" | "network" | "parse";
@@ -134,6 +239,7 @@ export default function PdfPages({ url }: { url: string }) {
   useEffect(() => {
     let cancelled = false;
     let task: LoadingTask | null = null;
+    const abort = new AbortController();
 
     setError(null);
 
@@ -149,17 +255,32 @@ export default function PdfPages({ url }: { url: string }) {
       if (cancelled) return;
 
       try {
-        task = rt.lib.getDocument({
-          url,
-          worker: rt.worker,
-          // Both are required: pdf.js only honours disableAutoFetch when streaming is off.
-          // With streaming on, one 200 response downloads the whole file sequentially.
-          disableStream: true,
-          disableAutoFetch: true, // never download the rest of the file in the background
-          isEvalSupported: false,
-          rangeChunkSize: 262144,
-        });
-        const loaded = await task.promise;
+        let loaded: PdfDoc;
+        try {
+          loaded = await openRanged(
+            rt,
+            url,
+            abort.signal,
+            () => cancelled,
+            (t) => (task = t),
+          );
+        } catch (e) {
+          if (cancelled) return;
+          // Only fall back when ranges themselves are unusable (not 404/403/offline).
+          if (!(e instanceof RangeProblem) && classify(e) !== "parse") throw e;
+          console.warn("Range loading failed, downloading the whole file:", e);
+          await Promise.resolve(task?.destroy()).catch(() => {});
+          if (cancelled) return;
+          task = rt.lib.getDocument({
+            url: withParam(url, "full", String(Date.now())),
+            worker: rt.worker,
+            disableRange: true, // plain GET, no Range header
+            disableStream: false,
+            disableAutoFetch: false,
+            isEvalSupported: false,
+          });
+          loaded = await task.promise;
+        }
         if (!cancelled) setDoc(loaded);
       } catch (e) {
         if (cancelled) return;
@@ -170,7 +291,8 @@ export default function PdfPages({ url }: { url: string }) {
 
     return () => {
       cancelled = true;
-      // aborts the in-flight download; the shared worker survives
+      abort.abort(); // stops in-flight range requests
+      // the shared worker survives
       Promise.resolve(task?.destroy()).catch(() => {});
     };
   }, [url]);
