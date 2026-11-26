@@ -19,16 +19,14 @@ export async function GET(
     return new Response("Upstream error", { status: up.status });
   }
 
-  const headers = new Headers({
-    "content-type": "application/pdf",
-    "accept-ranges": "bytes",
-    // Whole file: safe to cache forever (the name is a content hash).
-    // Partial (206): never let a shared cache store it, or it could be served for a different range.
-    "cache-control":
-      up.status === 206
-        ? "private, no-store"
-        : "public, max-age=31536000, immutable",
-  });
+const headers = new Headers({
+  "content-type": "application/pdf",
+  "accept-ranges": "bytes",
+  // "private": the CDN won't store it, so every Range request reaches this route.
+  // The visitor's own browser still caches it (the file name is a content hash).
+  "cache-control": "private, max-age=31536000, immutable",
+});
+
   for (const k of ["content-length", "content-range", "etag"]) {
     const v = up.headers.get(k);
     if (v) headers.set(k, v);
