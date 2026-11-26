@@ -27,10 +27,19 @@ const headers = new Headers({
   "cache-control": "private, max-age=31536000, immutable",
 });
 
-  for (const k of ["content-length", "content-range", "etag"]) {
+    for (const k of ["content-length", "content-range", "etag"]) {
     const v = up.headers.get(k);
     if (v) headers.set(k, v);
-  }
+    }
+
+    // Range request: stream the slice as before (it already has a length).
+    if (range) return new Response(up.body, { status: up.status, headers });
+
+    // Full request: buffer it so Vercel sends Content-Length instead of chunked.
+    // pdf.js only reads the headers, sees range support, then cancels this download.
+    const buf = await up.arrayBuffer();
+    headers.set("content-length", String(buf.byteLength));
+    return new Response(buf, { status: 200, headers });
 
   return new Response(up.body, { status: up.status, headers });
 }
