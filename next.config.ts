@@ -27,15 +27,6 @@ const nextConfig: NextConfig = {
       },
     ];
   },
-
-  async rewrites() {
-    return [
-      {
-        source: "/pdf/:file",
-        destination: "https://cdn.sanity.io/files/uc6805ie/production/:file",
-      },
-    ];
-  },
 };
 
 export default nextConfig;
