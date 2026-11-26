@@ -4,6 +4,7 @@ import ArticlesViewer from "@/components/articles/ArticlesViewer";
 import { sanityFetch } from "@/lib/live";
 import { ARTICLES_QUERY } from "@/lib/sanity";
 import type { ArticleItem } from "@/lib/types";
+import { localPdfUrl } from "@/lib/pdf";
 
 export const metadata: Metadata = {
   title: "المقالات | أ.د. رشا محمد أشرف",
@@ -15,7 +16,7 @@ export default async function ArticlesPage() {
   // The title keeps its stega characters (click-to-edit); the URL must be clean to be fetched.
   const articles = ((list ?? []) as unknown as ArticleItem[]).map((a) => ({
     ...a,
-    pdfUrl: stegaClean(a.pdfUrl),
+    pdfUrl: localPdfUrl(stegaClean(a.pdfUrl)),
   }));
 
   return (

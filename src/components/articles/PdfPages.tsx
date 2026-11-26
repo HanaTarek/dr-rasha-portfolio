@@ -27,6 +27,7 @@ type PdfJsLib = {
     worker?: unknown;
     disableAutoFetch?: boolean;
     isEvalSupported?: boolean;
+    rangeChunkSize: 262144;
   }): LoadingTask;
 };
 declare global {
@@ -142,6 +143,7 @@ export default function PdfPages({ url }: { url: string }) {
           worker: rt.worker,
           disableAutoFetch: true, // don't pull the whole file in the background
           isEvalSupported: false, // hardening for pdf.js < 4.2 (CVE-2024-4367)
+          rangeChunkSize: 262144,
         });
         const loaded = await task.promise;
         if (!cancelled) setDoc(loaded);
