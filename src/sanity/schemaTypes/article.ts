@@ -1,5 +1,6 @@
-import { defineField, defineType } from 'sanity'
+import { defineField, defineType } from "sanity";
 import LinearPdfInput from "../../../public/LinearPdfInput";
+import { slugify, slugValidation } from "@/lib/slugify";
 
 export const articleType = defineType({
   name: "article",
@@ -11,6 +12,15 @@ export const articleType = defineType({
       title: "عنوان المقال",
       type: "string",
       validation: (rule) => rule.required(),
+    }),
+    defineField({
+      name: "slug",
+      title: "رابط المقال",
+      description:
+        'اضغط "Generate" ليُنشأ تلقائيًا من العنوان (ويمكنك تعديله). حروف إنجليزية فقط، ويظهر في الرابط /articles/...',
+      type: "slug",
+      options: { source: "title", slugify },
+      validation: (rule) => rule.required().custom(slugValidation),
     }),
     defineField({
       name: "order",

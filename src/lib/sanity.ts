@@ -16,4 +16,3 @@ const builder = createImageUrlBuilder({ projectId, dataset });
 export const urlFor = (source: SanityImage) => builder.image(source);
 
 export const HOME_QUERY = `*[_id == "homePage"][0]`;
-export const ARTICLES_QUERY = `*[_type == "article" && defined(pdf.asset)] | order(order asc, _createdAt asc){ _id, title, "pdfUrl": pdf.asset->url }`;

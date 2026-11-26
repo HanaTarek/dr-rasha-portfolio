@@ -1,27 +1,18 @@
-import type { Metadata } from "next";
+import { redirect } from "next/navigation";
 import { stegaClean } from "next-sanity";
-import ArticlesViewer from "@/components/articles/ArticlesViewer";
 import { sanityFetch } from "@/lib/live";
-import { ARTICLES_QUERY } from "@/lib/sanity";
-import type { ArticleItem } from "@/lib/types";
-import { localPdfUrl } from "@/lib/pdf";
+import { FIRST_ARTICLE_QUERY } from "@/lib/articles";
 
-export const metadata: Metadata = {
-  title: "المقالات | أ.د. رشا محمد أشرف",
-};
-
-export default async function ArticlesPage() {
-  const { data: list } = await sanityFetch({ query: ARTICLES_QUERY });
-
-  // The title keeps its stega characters (click-to-edit); the URL must be clean to be fetched.
-  const articles = ((list ?? []) as unknown as ArticleItem[]).map((a) => ({
-    ...a,
-    pdfUrl: localPdfUrl(stegaClean(a.pdfUrl)),
-  }));
+export default async function ArticlesIndex() {
+  const { data } = await sanityFetch({ query: FIRST_ARTICLE_QUERY });
+  const slug = (data as { slug?: string } | null)?.slug;
+  if (slug) redirect(`/articles/${stegaClean(slug)}`);
 
   return (
     <main className="mx-auto w-full max-w-[1200px] px-5 pb-14 pt-8">
-      <ArticlesViewer articles={articles} />
+      <p className="rounded-lg border border-s-4 border-line border-s-teal bg-surface p-5 text-muted">
+        لا توجد مقالات بعد.
+      </p>
     </main>
   );
 }
