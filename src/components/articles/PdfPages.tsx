@@ -33,6 +33,7 @@ type PdfJsLib = {
     url: string;
     worker?: unknown;
     disableAutoFetch?: boolean;
+    disableStream?: boolean;
     isEvalSupported?: boolean;
     rangeChunkSize?: number;
   }): LoadingTask;
@@ -151,6 +152,9 @@ export default function PdfPages({ url }: { url: string }) {
         task = rt.lib.getDocument({
           url,
           worker: rt.worker,
+          // Both are required: pdf.js only honours disableAutoFetch when streaming is off.
+          // With streaming on, one 200 response downloads the whole file sequentially.
+          disableStream: true,
           disableAutoFetch: true, // never download the rest of the file in the background
           isEvalSupported: false,
           rangeChunkSize: 262144,
