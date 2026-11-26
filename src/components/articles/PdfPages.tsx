@@ -238,7 +238,8 @@ export default function PdfPages({ url }: { url: string }) {
   // 1. Open the document. Only the first ranges are fetched here; pages come later.
   useEffect(() => {
     let cancelled = false;
-    let task: LoadingTask | null = null;
+    // the cast stops TypeScript from narrowing `task` to `null` (it is assigned in a callback)
+    let task = null as LoadingTask | null;
     const abort = new AbortController();
 
     setError(null);
@@ -262,7 +263,9 @@ export default function PdfPages({ url }: { url: string }) {
             url,
             abort.signal,
             () => cancelled,
-            (t) => (task = t),
+            (t) => {
+              task = t;
+            },
           );
         } catch (e) {
           if (cancelled) return;
