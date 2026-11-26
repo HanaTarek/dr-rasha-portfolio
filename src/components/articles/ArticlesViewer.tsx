@@ -18,7 +18,9 @@ export default function ArticlesViewer({
 }: {
   articles: ArticleItem[];
 }) {
-  const [current, setCurrent] = useState(0);
+  // null until the hash has been read. The server can't see "#a2", so without this the
+  // first render would start downloading article 1's PDF and then throw it away.
+  const [current, setCurrent] = useState<number | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const viewerRef = useRef<HTMLElement>(null);
 
@@ -41,7 +43,7 @@ export default function ArticlesViewer({
     );
   }
 
-  const article = articles[current];
+  const article = current === null ? null : articles[current];
 
   return (
     <div className="grid items-start gap-5 lg:grid-cols-[260px_minmax(0,1fr)] lg:gap-7">
@@ -51,7 +53,7 @@ export default function ArticlesViewer({
           label: a.title,
           href: `#a${i + 1}`,
         }))}
-        current={current}
+        current={current ?? 0}
         title="المقالات"
         toggleLabel="قائمة المقالات"
         navLabel="قائمة المقالات"
@@ -64,21 +66,26 @@ export default function ArticlesViewer({
         }}
       />
 
-      <article ref={viewerRef} className="min-w-0 scroll-mt-24">
-        <h1 className="mb-2.5 text-[clamp(24px,3.4vw,34px)] font-extrabold leading-normal text-ink after:mt-1.5 after:block after:h-1 after:w-12 after:rounded-sm after:bg-gold after:content-['']">
-          {article.title}
-        </h1>
-        <p className="mb-[18px] text-[15px] text-muted">
-          <a
-            href={article.pdfUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="font-bold text-teal"
-          >
-            فتح المقال بصيغة PDF في صفحة مستقلة
-          </a>
-        </p>
-        <PdfPages key={article._id} url={article.pdfUrl} />
+      {/* min-h keeps the footer from jumping while the title and PDF appear */}
+      <article ref={viewerRef} className="min-h-[85svh] min-w-0 scroll-mt-24">
+        {article && (
+          <>
+            <h1 className="mb-2.5 text-[clamp(24px,3.4vw,34px)] font-extrabold leading-normal text-ink after:mt-1.5 after:block after:h-1 after:w-12 after:rounded-sm after:bg-gold after:content-['']">
+              {article.title}
+            </h1>
+            <p className="mb-[18px] text-[15px] text-muted">
+              <a
+                href={article.pdfUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-bold text-teal"
+              >
+                فتح المقال بصيغة PDF في صفحة مستقلة
+              </a>
+            </p>
+            <PdfPages key={article._id} url={article.pdfUrl} />
+          </>
+        )}
       </article>
     </div>
   );

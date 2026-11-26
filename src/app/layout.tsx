@@ -1,10 +1,12 @@
 import type { Metadata } from "next";
 import { Cairo } from "next/font/google";
+import { draftMode } from "next/headers";
+import { VisualEditing } from "next-sanity/visual-editing";
 import "./globals.css";
 import Navbar from "@/components/Navbar/Navbar";
 import { ThemeProvider } from "@/context/ThemeContext";
 import Footer from "@/components/Footer";
-import { sanityFetch } from "@/lib/live";
+import { sanityFetch, SanityLive } from "@/lib/live";
 import { HOME_QUERY } from "@/lib/sanity";
 import type { HomePage } from "@/lib/types";
 
@@ -17,7 +19,10 @@ export const metadata: Metadata = {
 };
 
 export default async function RootLayout({ children }: LayoutProps<"/">) {
-  const { data } = await sanityFetch({ query: HOME_QUERY });
+  const [{ data }, { isEnabled: isDraftMode }] = await Promise.all([
+    sanityFetch({ query: HOME_QUERY }),
+    draftMode(),
+  ]);
   const page = data as unknown as HomePage | null;
 
   return (
@@ -41,6 +46,9 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
           {children}
           <Footer text={page?.footerText} />
         </ThemeProvider>
+        {/* Mounted ONCE for the whole site: a single live-events connection that survives navigation */}
+        <SanityLive />
+        {isDraftMode && <VisualEditing />}
       </body>
     </html>
   );

@@ -3,9 +3,9 @@
 import { useEffect, useRef, useState } from "react";
 
 /*
- * Uses the SAME pdf.js build as the original HTML page (3.11.174, UMD), loaded with a
- * plain <script> tag (cdnjs first, optional local copy second). Nothing from pdfjs-dist goes through the bundler,
- * so there is no "canvas" error and no version differences.
+ * pdf.js 3.11.174 (UMD), self-hosted in public/pdfjs/3.11.174/ :
+ *   pdf.min.js + pdf.worker.min.js  (copy them from node_modules/pdfjs-dist/build/)
+ * Same origin => no cdnjs DNS/TLS cost, cacheable forever, no blob: worker wrapper.
  */
 type Viewport = { width: number; height: number };
 type RenderTask = { promise: Promise<void>; cancel(): void };
@@ -15,12 +15,19 @@ type PdfPage = {
     canvasContext: CanvasRenderingContext2D;
     viewport: Viewport;
   }): RenderTask;
+  cleanup(): void;
 };
 type PdfDoc = { numPages: number; getPage(n: number): Promise<PdfPage> };
 type LoadingTask = { promise: Promise<PdfDoc>; destroy(): Promise<void> };
 type PdfJsLib = {
   GlobalWorkerOptions: { workerSrc: string };
-  getDocument(src: { data: ArrayBuffer }): LoadingTask;
+  PDFWorker: new (o?: { name?: string }) => unknown;
+  getDocument(src: {
+    url: string;
+    worker?: unknown;
+    disableAutoFetch?: boolean;
+    isEvalSupported?: boolean;
+  }): LoadingTask;
 };
 declare global {
   interface Window {
@@ -28,55 +35,54 @@ declare global {
   }
 }
 
-// Same version and source the original HTML page used (it worked there).
-const VERSION = "3.11.174";
-const SOURCES = [
-  `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${VERSION}/`,
-  "/pdfjs/", // optional local fallback: put pdf.min.js + pdf.worker.min.js in public/pdfjs
-];
+const BASE = "/pdfjs/3.11.174/";
 
-function loadScript(src: string) {
-  return new Promise<void>((resolve, reject) => {
-    const s = document.createElement("script");
-    s.src = src;
-    s.async = true;
-    s.onload = () => resolve();
-    s.onerror = () => {
-      s.remove();
-      reject(new Error("Could not load " + src));
-    };
-    document.head.appendChild(s);
-  });
-}
+type Runtime = { lib: PdfJsLib; worker: unknown };
+let runtimePromise: Promise<Runtime> | null = null;
 
-let libPromise: Promise<PdfJsLib> | null = null;
-function loadPdfJs(): Promise<PdfJsLib> {
-  if (window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
-  if (!libPromise) {
-    libPromise = (async () => {
-      let lastError: unknown;
-      for (const base of SOURCES) {
-        try {
-          await loadScript(base + "pdf.min.js");
-          if (!window.pdfjsLib)
-            throw new Error("pdfjsLib not found after loading " + base);
-          window.pdfjsLib.GlobalWorkerOptions.workerSrc =
-            base + "pdf.worker.min.js";
-          return window.pdfjsLib;
-        } catch (e) {
-          lastError = e;
-        }
-      }
-      throw lastError;
-    })().catch((e) => {
-      libPromise = null;
-      throw e;
-    });
+// Loaded once, only when a PDF is actually opened. ONE worker is shared by every article,
+// so switching articles no longer spawns (and re-downloads) a new worker each time.
+function loadPdfJs(): Promise<Runtime> {
+  if (!runtimePromise) {
+    runtimePromise = new Promise<PdfJsLib>((resolve, reject) => {
+      if (window.pdfjsLib) return resolve(window.pdfjsLib);
+      const s = document.createElement("script");
+      s.src = BASE + "pdf.min.js";
+      s.async = true;
+      s.onload = () =>
+        window.pdfjsLib
+          ? resolve(window.pdfjsLib)
+          : reject(new Error("pdfjsLib not found"));
+      s.onerror = () => {
+        s.remove();
+        reject(new Error("Could not load pdf.js"));
+      };
+      document.head.appendChild(s);
+    })
+      .then((lib) => {
+        lib.GlobalWorkerOptions.workerSrc = BASE + "pdf.worker.min.js";
+        return { lib, worker: new lib.PDFWorker({ name: "articles" }) };
+      })
+      .catch((e) => {
+        runtimePromise = null;
+        throw e;
+      });
   }
-  return libPromise;
+  return runtimePromise;
 }
 
 type ErrorKind = "lib" | "notfound" | "forbidden" | "network" | "parse";
+
+// pdf.js reports HTTP problems as exceptions when it loads by URL
+function classify(e: unknown): ErrorKind {
+  const err = e as { name?: string; status?: number };
+  if (err.name === "MissingPDFException" || err.status === 404)
+    return "notfound";
+  if (err.status === 403) return "forbidden";
+  if (err.name === "InvalidPDFException" || err.name === "FormatError")
+    return "parse";
+  return "network";
+}
 
 const ERROR_TEXT: Record<ErrorKind, { title: string; hint: string }> = {
   lib: {
@@ -104,68 +110,56 @@ const ERROR_TEXT: Record<ErrorKind, { title: string; hint: string }> = {
 const zoomBtn =
   "grid h-9 min-w-9 cursor-pointer place-items-center rounded-full border border-line bg-bg px-3 text-base font-bold text-ink hover:bg-surface aria-pressed:border-teal aria-pressed:text-teal disabled:cursor-default disabled:opacity-40 focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-gold";
 
+const yieldToMain = () => new Promise<void>((r) => setTimeout(r, 0));
+
 export default function PdfPages({ url }: { url: string }) {
   const stageRef = useRef<HTMLDivElement>(null);
   const [doc, setDoc] = useState<PdfDoc | null>(null);
   const [error, setError] = useState<ErrorKind | null>(null);
   const [width, setWidth] = useState(0);
   const [zoom, setZoom] = useState(1);
-  const [fit, setFit] = useState<"page" | "width">("page");
 
-  // 1. Load the PDF document
+  // 1. Load the PDF by URL (not fetch -> ArrayBuffer): pdf.js streams it and, when the
+  //    server supports Range requests, downloads only the parts the visible pages need.
   useEffect(() => {
     let cancelled = false;
-    let loadingTask: LoadingTask | null = null;
+    let task: LoadingTask | null = null;
 
     (async () => {
-      let lib: PdfJsLib;
+      let rt: Runtime;
       try {
-        lib = await loadPdfJs();
+        rt = await loadPdfJs();
       } catch (e) {
         console.error("pdf.js load failed:", e);
         if (!cancelled) setError("lib");
         return;
       }
-
-      let buffer: ArrayBuffer;
-      try {
-        const res = await fetch(url);
-        if (!res.ok) {
-          if (!cancelled)
-            setError(
-              res.status === 404
-                ? "notfound"
-                : res.status === 403
-                  ? "forbidden"
-                  : "network",
-            );
-          return;
-        }
-        buffer = await res.arrayBuffer();
-      } catch {
-        if (!cancelled) setError("network");
-        return;
-      }
       if (cancelled) return;
 
       try {
-        loadingTask = lib.getDocument({ data: buffer });
-        const loaded = await loadingTask.promise;
-        if (cancelled) return; // cleanup already destroyed the task
-        setDoc(loaded);
+        task = rt.lib.getDocument({
+          url,
+          worker: rt.worker,
+          disableAutoFetch: true, // don't pull the whole file in the background
+          isEvalSupported: false, // hardening for pdf.js < 4.2 (CVE-2024-4367)
+        });
+        const loaded = await task.promise;
+        if (!cancelled) setDoc(loaded);
       } catch (e) {
-        console.error("pdf.js parse failed:", e);
-        if (!cancelled) setError("parse");
+        if (cancelled) return;
+        console.error("pdf.js load failed:", e);
+        setError(classify(e));
       }
     })();
 
     return () => {
       cancelled = true;
-      Promise.resolve(loadingTask?.destroy?.()).catch(() => {});
+      // destroy() also aborts the in-flight download
+      Promise.resolve(task?.destroy?.()).catch(() => {});
     };
   }, [url]);
 
-  // 2. Track the available width (debounced, so resizing doesn't re-render every frame)
+  // 2. Track the available width (debounced)
   useEffect(() => {
     const stage = stageRef.current;
     if (!stage) return;
@@ -184,79 +178,158 @@ export default function PdfPages({ url }: { url: string }) {
     };
   }, []);
 
-  // 3. Draw every page onto its own canvas
+  // 3. Create one correctly-sized placeholder per page immediately (no layout shift),
+  //    then draw each page only when it is near the viewport, one at a time.
   useEffect(() => {
     const stage = stageRef.current;
     if (!doc || !stage || !width) return;
 
     let cancelled = false;
-    let task: RenderTask | null = null;
-    // Tallest a page may be in "fit page" mode: roughly what fits on screen under the navbar
+    const active = new Set<RenderTask>();
+    let observer: IntersectionObserver | undefined;
+    let chain: Promise<void> = Promise.resolve();
+
     const maxHeight = Math.max(320, window.innerHeight - 140);
-    // Always render at least 2x and let the browser scale down: much sharper text, even on 1x screens
-    const oversample = Math.min(Math.max(window.devicePixelRatio || 1, 2), 3);
-    stage.replaceChildren();
+    // sharp text without the memory cost of 3x canvases on phones
+    const oversample = Math.min(Math.max(window.devicePixelRatio || 1, 1.5), 2);
+
+    const sizeOf = (base: Viewport) => {
+      const scale =
+        Math.min(width / base.width, maxHeight / base.height) * zoom;
+      return {
+        scale,
+        w: Math.floor(base.width * scale),
+        h: Math.floor(base.height * scale),
+      };
+    };
+
+    const renderInto = async (n: number, slot: HTMLElement) => {
+      const page = await doc.getPage(n);
+      if (cancelled) return;
+
+      const { scale, w, h } = sizeOf(page.getViewport({ scale: 1 }));
+      const ratio = Math.max(1, Math.min(oversample, 4096 / w));
+      const viewport = page.getViewport({ scale: scale * ratio });
+
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.floor(viewport.width);
+      canvas.height = Math.floor(viewport.height);
+      canvas.style.width = `${w}px`;
+      canvas.style.height = `${h}px`;
+      // pdf.js positions every glyph itself; inherited spacing/direction breaks Arabic joining.
+      canvas.dir = "ltr";
+      canvas.style.direction = "ltr";
+      canvas.style.letterSpacing = "normal";
+      canvas.style.wordSpacing = "normal";
+      canvas.style.fontKerning = "auto";
+      canvas.style.textRendering = "auto";
+      canvas.className =
+        "block rounded-md border border-line bg-white shadow-[0_6px_22px_rgba(13,42,92,0.12)]";
+
+      // if this page differs from page 1, correct the placeholder
+      slot.style.width = `${w}px`;
+      slot.style.height = `${h}px`;
+      slot.replaceChildren(canvas);
+
+      const task = page.render({
+        canvasContext: canvas.getContext("2d")!,
+        viewport,
+      });
+      active.add(task);
+      try {
+        await task.promise;
+      } finally {
+        active.delete(task);
+      }
+      page.cleanup();
+    };
 
     (async () => {
+      const first = await doc.getPage(1);
+      if (cancelled) return;
+      const { w, h } = sizeOf(first.getViewport({ scale: 1 }));
+
+      // Old canvases stay on screen until this point, so the stage never collapses.
+      stage.replaceChildren();
+
+      observer = new IntersectionObserver(
+        (entries) => {
+          for (const entry of entries) {
+            if (!entry.isIntersecting) continue;
+            const slot = entry.target as HTMLElement;
+            observer?.unobserve(slot);
+            const n = Number(slot.dataset.page);
+            chain = chain
+              .then(async () => {
+                if (cancelled) return;
+                await renderInto(n, slot);
+                await yieldToMain(); // let taps/scroll through between pages
+              })
+              .catch(() => {
+                /* cancelled renders reject on purpose */
+              });
+          }
+        },
+        { rootMargin: "800px 0px" },
+      );
+
       for (let n = 1; n <= doc.numPages; n++) {
-        const page = await doc.getPage(n);
-        if (cancelled) return;
-
-        const base = page.getViewport({ scale: 1 });
-        // Different PDFs have different page shapes (16:9 slides vs. portrait A4), so
-        // normalise: fit the whole page on screen, or fill the width.
-        const widthScale = width / base.width;
-        const fitScale =
-          fit === "page"
-            ? Math.min(widthScale, maxHeight / base.height)
-            : widthScale;
-        const cssScale = fitScale * zoom;
-        const cssWidth = Math.floor(base.width * cssScale);
-        const cssHeight = Math.floor(base.height * cssScale);
-        // keep the backing canvas under ~4096px wide (mobile memory limits)
-        const ratio = Math.max(1, Math.min(oversample, 4096 / cssWidth));
-        const viewport = page.getViewport({ scale: cssScale * ratio });
-
-        const canvas = document.createElement("canvas");
-        canvas.width = Math.floor(viewport.width);
-        canvas.height = Math.floor(viewport.height);
-        canvas.style.width = `${cssWidth}px`;
-        canvas.style.height = `${cssHeight}px`;
-        // Canvas text inherits typography from the page's CSS; pdf.js positions every glyph
-        // itself, so any inherited spacing/direction breaks Arabic joining. Reset them.
-        canvas.dir = "ltr";
-        canvas.style.direction = "ltr";
-        canvas.style.letterSpacing = "normal";
-        canvas.style.wordSpacing = "normal";
-        canvas.style.fontKerning = "auto";
-        canvas.style.textRendering = "auto";
-        canvas.className =
-          "mx-auto mb-5 block rounded-md border border-line bg-white shadow-[0_6px_22px_rgba(13,42,92,0.12)]";
-        stage.appendChild(canvas);
-
-        task = page.render({
-          canvasContext: canvas.getContext("2d")!,
-          viewport,
-        });
-        await task.promise;
+        const slot = document.createElement("div");
+        slot.dataset.page = String(n);
+        slot.className = "mx-auto mb-5 rounded-md bg-surface";
+        slot.style.width = `${w}px`;
+        slot.style.height = `${h}px`;
+        stage.appendChild(slot);
+        observer.observe(slot);
       }
-    })().catch(() => {
-      /* cancelled renders reject on purpose */
-    });
+    })().catch(() => {});
 
     return () => {
       cancelled = true;
-      task?.cancel();
+      observer?.disconnect();
+      active.forEach((t) => t.cancel());
     };
-  }, [doc, width, zoom, fit]);
+  }, [doc, width, zoom]);
 
   const loading = !doc && !error;
 
   return (
-    <>
+    // min-h reserves space while loading so the footer doesn't jump when pages appear
+    <div className="min-h-[80svh]">
+      <div
+        className="mb-3 flex flex-wrap items-center gap-2"
+        role="group"
+        aria-label="تكبير المقال"
+      >
+        <button
+          type="button"
+          onClick={() => setZoom((z) => Math.max(0.75, +(z - 0.25).toFixed(2)))}
+          disabled={!doc || zoom <= 0.75}
+          aria-label="تصغير"
+          className={zoomBtn}
+        >
+          −
+        </button>
+        <span
+          className="min-w-14 text-center text-[15px] font-bold text-ink"
+          aria-live="polite"
+        >
+          {Math.round(zoom * 100)}%
+        </span>
+        <button
+          type="button"
+          onClick={() => setZoom((z) => Math.min(2.5, +(z + 0.25).toFixed(2)))}
+          disabled={!doc || zoom >= 2.5}
+          aria-label="تكبير"
+          className={zoomBtn}
+        >
+          +
+        </button>
+      </div>
+
       {loading && (
         <div
-          className="rounded-lg border border-s-4 border-line border-s-teal bg-surface p-5 text-muted"
+          className="mb-3 rounded-lg border border-s-4 border-line border-s-teal bg-surface p-5 text-muted"
           role="status"
         >
           جارٍ تحميل المقال…
@@ -272,48 +345,9 @@ export default function PdfPages({ url }: { url: string }) {
           {ERROR_TEXT[error].hint}
         </div>
       )}
-      {doc && (
-        <div
-          className="mb-3 flex flex-wrap items-center gap-2"
-          role="group"
-          aria-label="تكبير المقال"
-        >
-          <button
-            type="button"
-            onClick={() =>
-              setZoom((z) => Math.max(0.75, +(z - 0.25).toFixed(2)))
-            }
-            disabled={zoom <= 0.75}
-            aria-label="تصغير"
-            className={zoomBtn}
-          >
-            −
-          </button>
-          <span
-            className="min-w-14 text-center text-[15px] font-bold text-ink"
-            aria-live="polite"
-          >
-            {Math.round(zoom * 100)}%
-          </span>
-          <button
-            type="button"
-            onClick={() =>
-              setZoom((z) => Math.min(2.5, +(z + 0.25).toFixed(2)))
-            }
-            disabled={zoom >= 2.5}
-            aria-label="تكبير"
-            className={zoomBtn}
-          >
-            +
-          </button>
-        </div>
-      )}
-      <div
-        ref={stageRef}
-        dir="ltr"
-        className="min-h-[200px] overflow-x-auto"
-        aria-live="polite"
-      />
-    </>
+
+      {/* no aria-live here: announcing every appended canvas is just noise */}
+      <div ref={stageRef} dir="ltr" className="overflow-x-auto" />
+    </div>
   );
 }
