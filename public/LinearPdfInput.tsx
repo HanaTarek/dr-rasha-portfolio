@@ -23,28 +23,41 @@ async function linearize(file: File): Promise<File> {
   const qpdf = await createModule({ locateFile: () => "/qpdf.wasm" });
 
   qpdf.FS.writeFile("/in.pdf", new Uint8Array(await file.arrayBuffer()));
-  qpdf.callMain(["--linearize", "/in.pdf", "/out.pdf"]);
+
+  try {
+    // PowerPoint / Word exports often make qpdf print warnings. qpdf then exits with
+    // code 3 even though it wrote a perfectly good file, and the wasm build may throw.
+    // --warning-exit-0 avoids that; the try/catch covers builds that throw anyway.
+    // The real judge is the validation below, not the exit code.
+    qpdf.callMain(["--warning-exit-0", "--linearize", "/in.pdf", "/out.pdf"]);
+  } catch (e) {
+    console.warn("qpdf exited with an error, checking the output anyway:", e);
+  }
+
   const out: Uint8Array = (qpdf.FS.readFile("/out.pdf") as Uint8Array).slice();
 
-  // Never upload a damaged result: if it doesn't look like a complete PDF,
-  // throw, and the caller uploads the ORIGINAL file instead.
-  if (!looksLikeCompletePdf(out, file.size)) {
-    throw new Error("Linearized output failed validation");
-  }
+  // Never upload a damaged or non-linearized result: throw, and the caller
+  // uploads the ORIGINAL file instead (and tells the editor).
+  const problem = validate(out, file.size);
+  if (problem) throw new Error(`Linearized output rejected: ${problem}`);
 
   return new File([out as BlobPart], file.name, { type: "application/pdf" });
 }
 
-function looksLikeCompletePdf(out: Uint8Array, originalSize: number) {
-  if (out.length < 1024) return false;
+function validate(out: Uint8Array, originalSize: number): string | null {
+  if (out.length < 1024) return "output too small";
   if (out.length < originalSize * 0.7 || out.length > originalSize * 1.5)
-    return false;
-  const head = new TextDecoder("latin1").decode(out.subarray(0, 5));
-  if (head !== "%PDF-") return false;
-  const tail = new TextDecoder("latin1").decode(
-    out.subarray(out.length - 1024),
-  );
-  return tail.includes("%%EOF");
+    return `unexpected size (${out.length} vs ${originalSize})`;
+
+  const latin1 = new TextDecoder("latin1");
+  if (latin1.decode(out.subarray(0, 5)) !== "%PDF-")
+    return "missing %PDF- header";
+  // the linearization dictionary is the first object, so it sits at the very start
+  if (!latin1.decode(out.subarray(0, 2048)).includes("/Linearized"))
+    return "not linearized";
+  if (!latin1.decode(out.subarray(out.length - 1024)).includes("%%EOF"))
+    return "missing %%EOF";
+  return null;
 }
 
 type Status = "idle" | "working" | "done" | "plain" | "error";
@@ -99,11 +112,13 @@ export default function LinearPdfInput(props: FileInputProps) {
 
       let toUpload: File = file;
       let optimized = true;
+      let reason = "";
       try {
         toUpload = await linearize(file);
       } catch (e) {
         console.error("PDF linearize failed, uploading the original:", e);
         optimized = false;
+        reason = e instanceof Error ? e.message : String(e);
       }
 
       try {
@@ -121,7 +136,7 @@ export default function LinearPdfInput(props: FileInputProps) {
         setMessage(
           optimized
             ? "تم رفع الملف وتجهيزه للعرض السريع."
-            : "تم رفع الملف، لكن تعذّر تجهيزه للعرض السريع (سيعمل لكن قد يتأخر ظهوره).",
+            : `تم رفع الملف، لكن تعذّر تجهيزه للعرض السريع (سيعمل لكن قد يتأخر ظهوره). السبب: ${reason}`,
         );
       } catch (e) {
         console.error("Upload failed:", e);
