@@ -67,7 +67,10 @@ export default function ArticlesViewer({
       />
 
       {/* min-h keeps the footer from jumping while the title and PDF appear */}
-      <article ref={viewerRef} className="min-h-[85svh] min-w-0 scroll-mt-24">
+      <article
+        ref={viewerRef}
+        className="min-h-[85svh] w-full min-w-0 scroll-mt-24"
+      >
         {article && (
           <>
             <h1 className="mb-2.5 text-[clamp(24px,3.4vw,34px)] font-extrabold leading-normal text-ink after:mt-1.5 after:block after:h-1 after:w-12 after:rounded-sm after:bg-gold after:content-['']">

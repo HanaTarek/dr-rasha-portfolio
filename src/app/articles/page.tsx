@@ -20,7 +20,7 @@ export default async function ArticlesPage() {
   }));
 
   return (
-    <main className="mx-auto max-w-[1200px] px-5 pb-14 pt-8">
+    <main className="mx-auto w-full max-w-[1200px] px-5 pb-14 pt-8">
       <ArticlesViewer articles={articles} />
     </main>
   );

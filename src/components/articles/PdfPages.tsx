@@ -335,8 +335,7 @@ export default function PdfPages({ url }: { url: string }) {
     const oversample = Math.min(Math.max(window.devicePixelRatio || 1, 1.5), 2);
 
     const sizeOf = (base: Viewport) => {
-      const scale =
-        Math.min(width / base.width, maxHeight / base.height) * zoom;
+      const scale = (width / base.width) * zoom;
       return {
         scale,
         w: Math.floor(base.width * scale),
@@ -518,7 +517,7 @@ export default function PdfPages({ url }: { url: string }) {
       )}
 
       {/* no aria-live here: announcing every appended canvas is just noise */}
-      <div ref={stageRef} dir="ltr" className="overflow-x-auto" />
+      <div ref={stageRef} dir="ltr" className="w-full overflow-x-auto" />
     </div>
   );
 }

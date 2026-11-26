@@ -38,7 +38,8 @@ export default function SideMenu({
   internal = false,
 }: Props) {
   return (
-    <aside className="rounded-xl border border-line bg-surface p-3.5 lg:sticky lg:top-24 lg:max-h-[calc(100vh-110px)] lg:overflow-auto lg:p-4">
+    <aside className="rounded-xl border border-line bg-surface p-3.5 lg:sticky lg:top-24 lg:flex lg:max-h-[calc(100vh-110px)] lg:flex-col lg:overflow-hidden lg:p-4">
+      {" "}
       <button
         type="button"
         aria-expanded={open}
@@ -62,12 +63,13 @@ export default function SideMenu({
           <path d="M6 9l6 6 6-6" />
         </svg>
       </button>
-
-      <h2 className="mb-3.5 hidden text-[22px] font-extrabold text-ink lg:block">
+      <h2 className="mb-3.5 hidden shrink-0 text-[22px] font-extrabold text-ink lg:block">
         {title}
       </h2>
-
-      <nav aria-label={navLabel}>
+      <nav
+        aria-label={navLabel}
+        className="max-h-[60vh] overflow-y-auto lg:max-h-none lg:min-h-0 lg:flex-1 lg:-m-1 lg:p-1"
+      >
         <ol
           id="side-menu-list"
           className={`mt-3 gap-2 lg:mt-0 lg:grid ${open ? "grid" : "hidden"}`}
