@@ -27,6 +27,7 @@ type PdfJsLib = {
     worker?: unknown;
     disableAutoFetch?: boolean;
     disableStream: true;
+    disableRange: true;
     isEvalSupported?: boolean;
     rangeChunkSize: 262144;
   }): LoadingTask;
@@ -144,6 +145,7 @@ export default function PdfPages({ url }: { url: string }) {
           worker: rt.worker,
           disableAutoFetch: true, // don't pull the whole file in the background
           disableStream: true,
+          disableRange: true,
           isEvalSupported: false, // hardening for pdf.js < 4.2 (CVE-2024-4367)
           rangeChunkSize: 262144,
         });
