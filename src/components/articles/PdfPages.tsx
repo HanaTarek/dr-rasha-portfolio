@@ -6,6 +6,10 @@ import { useEffect, useRef, useState } from "react";
  * pdf.js 3.11.174 (UMD), self-hosted in public/pdfjs/3.11.174/ :
  *   pdf.min.js + pdf.worker.min.js  (copy them from node_modules/pdfjs-dist/build/)
  * Same origin => no cdnjs DNS/TLS cost, cacheable forever, no blob: worker wrapper.
+ *
+ * Range requests: pdf.js does them by itself when the server answers with
+ * `Accept-Ranges: bytes` and `Content-Length` (Sanity's CDN does), so no custom
+ * transport is needed. Keep disableRange/disableStream off.
  */
 type Viewport = { width: number; height: number };
 type RenderTask = { promise: Promise<void>; cancel(): void };
@@ -26,10 +30,10 @@ type PdfJsLib = {
     url: string;
     worker?: unknown;
     disableAutoFetch?: boolean;
-    disableStream: true;
-    disableRange: true;
+    disableStream?: boolean;
+    disableRange?: boolean;
     isEvalSupported?: boolean;
-    rangeChunkSize: 262144;
+    rangeChunkSize?: number;
   }): LoadingTask;
 };
 declare global {
@@ -128,6 +132,8 @@ export default function PdfPages({ url }: { url: string }) {
     let cancelled = false;
     let task: LoadingTask | null = null;
 
+    setError(null);
+
     (async () => {
       let rt: Runtime;
       try {
@@ -143,10 +149,8 @@ export default function PdfPages({ url }: { url: string }) {
         task = rt.lib.getDocument({
           url,
           worker: rt.worker,
-          disableAutoFetch: true, // don't pull the whole file in the background
-          disableStream: true,
-          disableRange: true,
-          isEvalSupported: false, // hardening for pdf.js < 4.2 (CVE-2024-4367)
+          disableAutoFetch: true,
+          isEvalSupported: false,
           rangeChunkSize: 262144,
         });
         const loaded = await task.promise;
@@ -160,7 +164,8 @@ export default function PdfPages({ url }: { url: string }) {
 
     return () => {
       cancelled = true;
-      // destroy() also aborts the in-flight download
+      // destroy() also aborts the in-flight download; the shared worker stays alive
+      // because we passed our own PDFWorker.
       Promise.resolve(task?.destroy?.()).catch(() => {});
     };
   }, [url]);
