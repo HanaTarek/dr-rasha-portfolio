@@ -15,6 +15,7 @@ import {
   type BookDetails,
   type BookMenuItem,
 } from "@/lib/books";
+import { localPdfUrl } from "@/lib/pdf";
 
 type Props = { params: Promise<{ slug: string }> };
 
@@ -203,7 +204,7 @@ export default async function BookPage({ params }: Props) {
               </div>
 
               <div className="rounded-xl border border-dashed border-line p-3 sm:p-4">
-                <PdfPages key={book._id} url={summaryPdfUrl} />
+                <PdfPages key={book._id} url={localPdfUrl(summaryPdfUrl)} />
                 <p className="mt-1 text-center text-[15px] font-bold text-muted">
                   نهاية الملخص
                 </p>

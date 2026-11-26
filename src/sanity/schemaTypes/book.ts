@@ -1,4 +1,5 @@
 import { defineArrayMember, defineField, defineType } from "sanity";
+import LinearPdfInput from "../../../public/LinearPdfInput";
 
 // Arabic -> Latin letters, so the slug can be generated from the Arabic title.
 const AR: Record<string, string> = {
@@ -159,6 +160,7 @@ export const bookType = defineType({
       type: "file",
       options: { accept: "application/pdf" },
       group: "content",
+      components: { input: LinearPdfInput },
       validation: (rule) => rule.required(),
     }),
     defineField({
