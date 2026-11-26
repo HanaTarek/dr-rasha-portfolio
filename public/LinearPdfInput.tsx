@@ -24,9 +24,27 @@ async function linearize(file: File): Promise<File> {
 
   qpdf.FS.writeFile("/in.pdf", new Uint8Array(await file.arrayBuffer()));
   qpdf.callMain(["--linearize", "/in.pdf", "/out.pdf"]);
-  const out: Uint8Array = qpdf.FS.readFile("/out.pdf");
+  const out: Uint8Array = (qpdf.FS.readFile("/out.pdf") as Uint8Array).slice();
+
+  // Never upload a damaged result: if it doesn't look like a complete PDF,
+  // throw, and the caller uploads the ORIGINAL file instead.
+  if (!looksLikeCompletePdf(out, file.size)) {
+    throw new Error("Linearized output failed validation");
+  }
 
   return new File([out as BlobPart], file.name, { type: "application/pdf" });
+}
+
+function looksLikeCompletePdf(out: Uint8Array, originalSize: number) {
+  if (out.length < 1024) return false;
+  if (out.length < originalSize * 0.7 || out.length > originalSize * 1.5)
+    return false;
+  const head = new TextDecoder("latin1").decode(out.subarray(0, 5));
+  if (head !== "%PDF-") return false;
+  const tail = new TextDecoder("latin1").decode(
+    out.subarray(out.length - 1024),
+  );
+  return tail.includes("%%EOF");
 }
 
 type Status = "idle" | "working" | "done" | "plain" | "error";
