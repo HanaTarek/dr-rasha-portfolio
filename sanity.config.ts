@@ -29,6 +29,7 @@ export default defineConfig({
             S.divider(),
             S.documentTypeListItem("article").title("المقالات"),
             S.documentTypeListItem("book").title("الكتب"), // <-- جديد
+            S.documentTypeListItem("research").title("الرسائل العلمية"),
           ]),
     }),
     // المعاينة المباشرة: الموقع داخل لوحة التحرير مع النقر للتعديل
@@ -51,10 +52,14 @@ export default defineConfig({
             }),
           }),
           article: defineLocations({
-            select: { title: "title" },
+            select: { title: "title", slug: "slug.current" },
             resolve: (doc) => ({
               locations: [
-                { title: doc?.title || "المقالات", href: "/articles" },
+                {
+                  title: doc?.title || "المقالات",
+                  href: doc?.slug ? `/articles/${doc.slug}` : "/articles",
+                },
+                { title: "قائمة المقالات", href: "/articles" },
               ],
             }),
           }),
@@ -68,6 +73,21 @@ export default defineConfig({
                   href: doc?.slug ? `/books/${doc.slug}` : "/books",
                 },
                 { title: "قائمة الكتب", href: "/books" },
+              ],
+            }),
+          }),
+          research: defineLocations({
+            select: { title: "title", slug: "slug.current", kind: "kind" },
+            resolve: (doc) => ({
+              locations: [
+                {
+                  title: doc?.title || "رسالة علمية",
+                  href:
+                    doc?.slug && doc?.kind
+                      ? `/research/${doc.kind}/${doc.slug}`
+                      : "/research",
+                },
+                { title: "الرسائل العلمية", href: "/research" },
               ],
             }),
           }),
