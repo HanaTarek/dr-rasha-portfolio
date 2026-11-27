@@ -8,11 +8,11 @@ import Link from "next/link";
 
 const links = [
   { label: "الرئيسية", href: "/" },
-  { label: "لقاءات", href: "#" },
+  // { label: "لقاءات", href: "#" },
   { label: "الكتب", href: "/books" },
-  { label: "الرسائل", href: "#" },
+  { label: "الرسائل", href: "/research" },
   { label: "المقالات", href: "/articles" },
-  { label: "الشهادات", href: "#" },
+  // { label: "الشهادات", href: "#" },
 ];
 
 const focusGold =

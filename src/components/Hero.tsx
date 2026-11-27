@@ -50,12 +50,12 @@ export default function Hero({ hero }: { hero: HeroData }) {
             >
               تواصل معي
             </a>
-            <a
+            {/* <a
               href="#roles"
               className="inline-block rounded-xl border-2 border-btn px-[26px] py-3 font-bold text-btn no-underline focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-gold"
             >
               المناصب والعضويات
-            </a>
+            </a> */}
           </div>
         </div>
 
