@@ -47,7 +47,7 @@ export default async function ResearchHubPage() {
             href="/research/all"
             className="inline-flex items-center rounded-full border border-teal px-6 py-2.5 text-[15px] font-bold text-teal no-underline hover:bg-teal hover:text-white focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-gold"
           >
-            عرض كل الرسائل ({countLabel(total)})
+            عرض كل الرسائل 
           </Link>
         </p>
       )}
