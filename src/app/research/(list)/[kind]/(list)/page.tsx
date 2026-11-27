@@ -42,7 +42,7 @@ export default async function ResearchListPage({ params }: Props) {
   const filter = FILTERS.find((f) => f.value === kind)!;
 
   return (
-    <main className="mx-auto max-w-[1200px] px-5 pb-14 pt-8">
+    <main className="mx-auto w-[940px] max-w-full px-5 pb-14 pt-8">
       <p className="mb-4 text-[15px]">
         <Link href="/research" className="font-bold text-teal">
           العودة إلى الرسائل العلمية

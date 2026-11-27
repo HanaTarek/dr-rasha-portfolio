@@ -1,7 +1,7 @@
 export default function Loading() {
   return (
     <main
-      className="mx-auto w-full max-w-[1200px] px-5 pb-14 pt-8"
+      className="mx-auto w-[940px] max-w-full px-5 pb-14 pt-8"
       aria-busy="true"
     >
       <span role="status" className="sr-only">
@@ -42,9 +42,8 @@ export default function Loading() {
             />
           ))}
         </div>
-
         {/* list */}
-        <div className="max-w-[900px]">
+        <div className="w-[900px] ">
           <div className="mb-3 flex h-6 items-center">
             <div className="h-4 w-24 rounded bg-line/60" />
           </div>
