@@ -9,6 +9,7 @@ import {
 import { articleType } from "./article";
 import { bookType } from "./book";
 import { researchType } from "./research";
+import { interviewProgram } from "./interviewProgram";
 
 export const schemaTypes = [
   homePage,
@@ -20,4 +21,5 @@ export const schemaTypes = [
   articleType,
   bookType,
   researchType,
+  interviewProgram,
 ];

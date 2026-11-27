@@ -17,7 +17,7 @@ export default async function BooksPage() {
   }));
 
   return (
-    <main className="mx-auto max-w-[1200px] px-5 pb-14 pt-8">
+    <main className="mx-auto w-full max-w-[1200px] px-5 pb-14 pt-8">
       <header className="mb-7 max-w-3xl">
         <h1 className="mb-2.5 text-[clamp(24px,3.4vw,34px)] font-extrabold leading-normal text-ink after:mt-1.5 after:block after:h-1 after:w-12 after:rounded-sm after:bg-gold after:content-['']">
           الكتب

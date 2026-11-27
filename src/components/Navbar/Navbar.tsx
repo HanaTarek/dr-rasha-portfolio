@@ -8,7 +8,7 @@ import Link from "next/link";
 
 const links = [
   { label: "الرئيسية", href: "/" },
-  // { label: "لقاءات", href: "#" },
+  { label: "لقاءات", href: "/interviews" },
   { label: "الكتب", href: "/books" },
   { label: "الرسائل", href: "/research" },
   { label: "المقالات", href: "/articles" },

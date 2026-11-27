@@ -29,6 +29,7 @@ export default defineConfig({
             S.divider(),
             S.documentTypeListItem("article").title("المقالات"),
             S.documentTypeListItem("book").title("الكتب"), // <-- جديد
+            S.documentTypeListItem("interviewProgram").title("اللقاءات"),
             S.documentTypeListItem("research").title("الرسائل العلمية"),
           ]),
     }),
@@ -73,6 +74,19 @@ export default defineConfig({
                   href: doc?.slug ? `/books/${doc.slug}` : "/books",
                 },
                 { title: "قائمة الكتب", href: "/books" },
+              ],
+            }),
+          }),
+          // <-- جديد: يربط كل برنامج بقسمه في صفحة اللقاءات
+          interviewProgram: defineLocations({
+            select: { title: "title", slug: "slug.current" },
+            resolve: (doc) => ({
+              locations: [
+                {
+                  title: doc?.title || "برنامج لقاءات",
+                  href: doc?.slug ? `/interviews#${doc.slug}` : "/interviews",
+                },
+                { title: "صفحة اللقاءات", href: "/interviews" },
               ],
             }),
           }),

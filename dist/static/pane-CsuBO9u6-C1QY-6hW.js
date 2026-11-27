@@ -1,0 +1,1 @@
+export{M as default}from"./BackLink-CaJFuyIZ-B3TGXUbc.js";
